@@ -43,6 +43,9 @@ export default function LoopPage() {
   // Date.now() is an impure read of the external clock, so it's captured in an effect rather than during render.
   const [daysSinceLast, setDaysSinceLast] = useState<number | null>(null);
   useEffect(() => {
+    // Syncing from an external, impure source (the clock) is exactly what an effect is for here —
+    // there's no pure way to derive "days since" during render itself.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDaysSinceLast(lastTime !== null ? Math.floor((Date.now() - lastTime) / 86_400_000) : null);
   }, [lastTime]);
   const showFriction = daysSinceLast !== null && daysSinceLast >= 2;

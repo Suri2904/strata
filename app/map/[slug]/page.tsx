@@ -12,7 +12,10 @@ import TopBar from "@/components/TopBar";
 import StrataGraph from "@/components/StrataGraph";
 import NodePanel from "@/components/NodePanel";
 
-type FetchState = "idle" | "loading" | "no-key" | "error";
+// "idle" doubles as "still loading" whenever curriculum isn't present yet — there's no
+// separate "loading" value, since the render below already shows the spinner by default
+// in that case, without needing an explicit setState at the start of the fetch effect.
+type FetchState = "idle" | "no-key" | "error";
 
 export default function MapPage() {
   const { slug } = useParams<{ slug: string }>();
@@ -43,7 +46,6 @@ export default function MapPage() {
     }
 
     let cancelled = false;
-    setFetchState("loading");
     fetch("/api/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

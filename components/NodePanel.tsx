@@ -6,6 +6,15 @@ import { ConceptNode, Curriculum, NodeStatus } from "@/lib/types";
 
 type Step = "brief" | "confidence" | "quiz" | "result";
 
+function Section({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1.5">
+      <p className="text-xs font-medium uppercase tracking-wider text-[var(--ink-muted)]">{label}</p>
+      <div className="space-y-2">{children}</div>
+    </div>
+  );
+}
+
 interface Props {
   node: ConceptNode | null;
   curriculum: Curriculum;
@@ -92,8 +101,36 @@ function NodeWizard({
   return (
     <>
       {step === "brief" && (
-        <div className="mt-5 space-y-4">
-          <p className="text-sm leading-relaxed text-[var(--ink-secondary)]">{node.summary}</p>
+        <div className="mt-5 space-y-5">
+          <Section label="Starting from what you know">
+            <p className="text-sm leading-relaxed text-[var(--ink-secondary)]">{node.explanation.foundation}</p>
+          </Section>
+
+          <Section label="Building it up">
+            {node.explanation.reasoning
+              .split(/\n{2,}/)
+              .filter(Boolean)
+              .map((para, i) => (
+                <p key={i} className="text-sm leading-relaxed text-[var(--ink-primary)]">
+                  {para}
+                </p>
+              ))}
+          </Section>
+
+          <div className="rounded-xl border border-[var(--accent)]/30 bg-[var(--accent-soft)] p-3.5">
+            <p className="text-xs font-medium text-[var(--accent-strong)]">Stated formally</p>
+            <p className="mt-1 text-sm leading-relaxed text-[var(--ink-primary)]">{node.explanation.formalStatement}</p>
+          </div>
+
+          <Section label="In practice">
+            <p className="text-sm leading-relaxed text-[var(--ink-secondary)]">{node.explanation.example}</p>
+          </Section>
+
+          <div className="rounded-xl border border-dashed border-[var(--border-hairline)] p-3.5">
+            <p className="text-xs font-medium text-[var(--warning)]">A common mistake</p>
+            <p className="mt-1 text-sm leading-relaxed text-[var(--ink-secondary)]">{node.explanation.misconception}</p>
+          </div>
+
           <div className="rounded-xl border border-[var(--border-hairline)] bg-[var(--surface-2)] p-3.5">
             <p className="text-xs font-medium text-[var(--ink-muted)]">Why it matters</p>
             <p className="mt-1 text-sm text-[var(--ink-primary)]">{node.whyItMatters}</p>
