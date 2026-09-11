@@ -92,17 +92,15 @@ Other rules:
 - Quiz questions test whether the reasoning landed, not whether a term was memorized - favor "why does X happen" or "what would change if Y" over "what is X called".
 - retention should vary honestly per node: "slow" for durable first-principles/derivation-heavy ideas, "medium" for standard conceptual ideas, "fast" for fact-heavy or context-specific ideas.
 - Write for an intelligent adult encountering this for the first time, aiming for near-foundational mastery - rigorous, not dumbed down, but built up rather than dropped on them.
-- Respond with JSON only, matching the provided schema exactly.`;
 
-const CRITIQUE_PROMPT = `You are reviewing a generated curriculum against a strict rubric before it ships. For EVERY node, check:
-
-1. Does "reasoning" actually derive the concept, or does it just restate/define it in different words? If it's a disguised definition, REWRITE it to genuinely build the idea up from the foundation - use a concrete scenario or numbers.
-2. Is "foundation" something a reader would actually already have at this point in the path (an earlier node, or common knowledge for depth 0)?
-3. Is "misconception" a real, specific, named error - not a vague strawman like "some people think it's simpler than it is"?
+Before outputting, silently self-check every node against this rubric, and fix anything that fails BEFORE you respond - don't show the check, just apply it:
+1. Does "reasoning" actually derive the concept, or does it just restate/define it in different words? A disguised definition must be rewritten to genuinely build the idea up from the foundation, using a concrete scenario or numbers.
+2. Is "foundation" something the reader would actually already have at this point in the path (an earlier node, or genuine common knowledge for depth 0)?
+3. Is "misconception" a real, specific, named error - not a vague strawman?
 4. Do quiz questions test understanding of the reasoning (why/what-if) rather than recall of a label?
-5. Is the prerequisite graph still a valid DAG with no forward references?
+5. Is the prerequisite graph a valid DAG with no forward references, and does every non-root node's depth exceed all of its prerequisites' depths?
 
-Rewrite whatever fails these checks. Keep what already passes unchanged. Output the FULL corrected curriculum JSON, matching the schema exactly - not just the fixes.`;
+Respond with JSON only, matching the provided schema exactly - the final, self-checked version, not a draft.`;
 
 export async function POST(req: NextRequest) {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -132,27 +130,18 @@ export async function POST(req: NextRequest) {
       responseSchema: curriculumSchema as unknown as Schema,
     };
 
-    // Pass 1: generate the first-principles curriculum.
-    const draftModel = genAI.getGenerativeModel({
+    // One call: the system prompt already bakes in a self-check-before-responding rubric,
+    // rather than a second network round trip - two sequential calls risked exceeding the
+    // serverless function's execution limit on top of Gemini's own free-tier latency.
+    const model = genAI.getGenerativeModel({
       model: "gemini-3.6-flash",
       systemInstruction: SYSTEM_PROMPT,
       generationConfig,
     });
-    const draftResult = await draftModel.generateContent(`Build the foundational mastery path for: "${topic}"`);
-    const draftText = draftResult.response.text();
+    const result = await model.generateContent(`Build the foundational mastery path for: "${topic}"`);
+    const text = result.response.text();
 
-    // Pass 2: self-critique and revise against the first-principles rubric before returning it.
-    const critiqueModel = genAI.getGenerativeModel({
-      model: "gemini-3.6-flash",
-      systemInstruction: CRITIQUE_PROMPT,
-      generationConfig,
-    });
-    const critiqueResult = await critiqueModel.generateContent(
-      `Here is the draft curriculum for "${topic}". Review and correct it per the rubric:\n\n${draftText}`,
-    );
-    const finalText = critiqueResult.response.text();
-
-    const parsed = JSON.parse(finalText) as { topic: string; tagline: string; nodes: Curriculum["nodes"] };
+    const parsed = JSON.parse(text) as { topic: string; tagline: string; nodes: Curriculum["nodes"] };
 
     const curriculum: Curriculum = {
       slug: slugify(topic),
