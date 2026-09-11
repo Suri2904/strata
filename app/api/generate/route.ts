@@ -4,7 +4,7 @@ import { Curriculum } from "@/lib/types";
 import { slugify } from "@/lib/curricula";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 const explanationSchema = {
   type: SchemaType.OBJECT,
@@ -69,7 +69,7 @@ const curriculumSchema = {
   properties: {
     topic: { type: SchemaType.STRING },
     tagline: { type: SchemaType.STRING, description: "one sentence, in the style: 'From X to Y, in the order each idea actually requires the last.'" },
-    nodes: { type: SchemaType.ARRAY, items: nodeSchema, description: "8 to 12 nodes, forming a valid prerequisite DAG from foundational (depth 0) to advanced" },
+    nodes: { type: SchemaType.ARRAY, items: nodeSchema, description: "6 to 9 nodes, forming a valid prerequisite DAG from foundational (depth 0) to advanced" },
   },
   required: ["topic", "tagline", "nodes"],
 };
@@ -86,7 +86,7 @@ For every node's "explanation":
 - misconception: name a REAL, specific mistake people make here (not a strawman) and explain precisely why it's wrong, ideally by pointing back at a step in the reasoning that resolves it.
 
 Other rules:
-- Produce 8 to 12 concept nodes ordered so that each node's prerequisites (by id) are strictly earlier/foundational relative to it.
+- Produce 6 to 9 concept nodes ordered so that each node's prerequisites (by id) are strictly earlier/foundational relative to it.
 - depth 0 nodes have no prerequisites. Later nodes reference only earlier node ids as prerequisites. The graph must be a valid DAG - no cycles, no forward references.
 - Every non-root node needs at least one prerequisite; most should have 1-2.
 - Quiz questions test whether the reasoning landed, not whether a term was memorized - favor "why does X happen" or "what would change if Y" over "what is X called".
