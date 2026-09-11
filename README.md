@@ -1,36 +1,32 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Strata
 
-## Getting Started
+A personal learning engine. Type any topic, get an AI-generated **prerequisite graph** — the actual order concepts need to be learned in to reach near-foundational mastery — then work through it with confidence-calibrated quizzes and spaced-repetition review scheduled around each concept's real retention half-life.
 
-First, run the development server:
+**Live:** _(add your Vercel URL here after deploying)_
+
+## How it's built
+
+- **Mastery Map** (`/map/[slug]`) — a topic's concepts laid out in dependency layers. Locked concepts unlock as their prerequisites are mastered. Every check starts with a confidence prediction, then a quiz, then a calibration readout comparing the two.
+- **Execution Loop** (`/loop`) — the companion dashboard: a due-for-review queue driven by spaced repetition (interval scaled by each concept's `retention` speed — slow/medium/fast), a compounding chart of concepts mastered over time, a session-cadence chart against your own rolling average, a streak counter, and a friction nudge that surfaces the single smallest next action when you've gone quiet.
+- **Curated paths** — Special Relativity and Bayesian Thinking ship fully written, no API key required.
+- **Generated paths** — any other topic is generated at request time via the Gemini API (`/api/generate`), using a structured JSON schema so the response is always a valid prerequisite DAG.
+
+All progress is stored in `localStorage` — no backend, no accounts, fully private to your browser.
+
+## Stack
+
+Next.js (App Router) · TypeScript · Tailwind CSS v4 · Zustand (persisted store) · Framer Motion · Gemini API (`@google/generative-ai`) · hand-rolled SVG charts (no charting library)
+
+## Running locally
 
 ```bash
+npm install
+cp .env.local.example .env.local   # optional — add a free Gemini key to unlock arbitrary topics
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Without a `GEMINI_API_KEY`, the two curated paths (Special Relativity, Bayesian Thinking) work fully; any other topic shows a message explaining the key is missing instead of failing silently.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Deploying
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Push to GitHub, import into Vercel, add `GEMINI_API_KEY` as an environment variable in the Vercel project settings (server-side only — never exposed to the client).
