@@ -13,6 +13,7 @@ interface StrataState {
   sessionLog: SessionLogEntry[];
 
   addCurriculum: (c: Curriculum) => void;
+  deleteCurriculum: (slug: string) => void;
   getNodeStatus: (slug: string, node: ConceptNode) => NodeStatus;
   recordAttempt: (
     curriculum: Curriculum,
@@ -36,6 +37,18 @@ export const useStrataStore = create<StrataState>()(
         set((state) => ({
           curricula: { ...state.curricula, [c.slug]: c },
         })),
+
+      deleteCurriculum: (slug) =>
+        set((state) => {
+          const remainingCurricula = Object.fromEntries(
+            Object.entries(state.curricula).filter(([s]) => s !== slug),
+          );
+          const remainingProgress = Object.fromEntries(
+            Object.entries(state.progress).filter(([, p]) => p.curriculumSlug !== slug),
+          );
+          const remainingSessionLog = state.sessionLog.filter((s) => s.curriculumSlug !== slug);
+          return { curricula: remainingCurricula, progress: remainingProgress, sessionLog: remainingSessionLog };
+        }),
 
       getNodeStatus: (slug, node) => {
         const key = progressKey(slug, node.id);
