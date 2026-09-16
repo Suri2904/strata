@@ -2,9 +2,17 @@
 
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ConceptNode, Curriculum, NodeStatus } from "@/lib/types";
+import { ConceptNode, Curriculum, NodeStatus, QuizQuestion } from "@/lib/types";
 
-type Step = "brief" | "confidence" | "quiz" | "result";
+type Step = "brief" | "check";
+
+// Coarse-to-numeric mapping so the lightweight tap-chip still feeds the same
+// |predicted - actual| calibration math the Execution Loop already uses.
+const CONFIDENCE_LEVELS = [
+  { label: "Guessing", value: 20 },
+  { label: "Fairly sure", value: 55 },
+  { label: "Confident", value: 90 },
+] as const;
 
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -87,16 +95,13 @@ function NodeWizard({
   onComplete: (confidence: number, score: number) => void;
 }) {
   const [step, setStep] = useState<Step>("brief");
-  const [confidence, setConfidence] = useState(50);
-  const [answers, setAnswers] = useState<Record<string, number>>({});
-  const [score, setScore] = useState(0);
+  // One question per attempt, picked fresh whenever the panel opens (remounts on node.id) —
+  // reviews see variety across a node's two authored questions instead of always the same one.
+  const [question] = useState<QuizQuestion>(() => node.quiz[Math.floor(Math.random() * node.quiz.length)]);
+  const [confidenceIdx, setConfidenceIdx] = useState<number | null>(null);
+  const [answerIdx, setAnswerIdx] = useState<number | null>(null);
 
-  function submitQuiz() {
-    const correct = node.quiz.filter((q) => answers[q.id] === q.correctIndex).length;
-    const pct = Math.round((correct / node.quiz.length) * 100);
-    setScore(pct);
-    setStep("result");
-  }
+  const correct = answerIdx !== null && answerIdx === question.correctIndex;
 
   return (
     <>
@@ -136,147 +141,92 @@ function NodeWizard({
             <p className="mt-1 text-sm text-[var(--ink-primary)]">{node.whyItMatters}</p>
           </div>
           <p className="text-xs text-[var(--ink-muted)]">
-            {node.estMinutes} min · {node.quiz.length} check questions · {node.retention}-decay
+            {node.estMinutes} min · one quick check · {node.retention}-decay
           </p>
           <button
-            onClick={() => setStep("confidence")}
+            onClick={() => setStep("check")}
             className="w-full rounded-xl bg-[var(--ink-primary)] py-3 text-sm font-semibold text-[#0a0a0a] hover:opacity-90"
           >
-            {status === "mastered" ? "Review this concept" : "Begin the check"}
+            {status === "mastered" ? "Review this concept" : "Quick check"}
           </button>
         </div>
       )}
 
-      {step === "confidence" && (
+      {step === "check" && (
         <div className="mt-6 space-y-5">
-          <p className="text-sm text-[var(--ink-primary)]">
-            Before you answer: how confident are you, right now, that you understand this?
-          </p>
           <div>
-            <input
-              type="range"
-              min={0}
-              max={100}
-              value={confidence}
-              onChange={(e) => setConfidence(Number(e.target.value))}
-              className="w-full accent-[var(--accent)]"
-            />
-            <div className="mt-1 flex justify-between text-xs text-[var(--ink-muted)]">
-              <span>Not at all</span>
-              <span className="font-display text-base text-[var(--ink-primary)]">{confidence}%</span>
-              <span>Fully confident</span>
+            <p className="text-xs text-[var(--ink-muted)]">How sure are you, before answering?</p>
+            <div className="mt-2 flex gap-2">
+              {CONFIDENCE_LEVELS.map((c, i) => (
+                <button
+                  key={c.label}
+                  onClick={() => setConfidenceIdx(i)}
+                  className={`flex-1 rounded-lg border px-2 py-2 text-xs font-medium transition-colors ${
+                    confidenceIdx === i
+                      ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--ink-primary)]"
+                      : "border-[var(--border-hairline)] text-[var(--ink-secondary)] hover:border-[var(--border-strong)]"
+                  }`}
+                >
+                  {c.label}
+                </button>
+              ))}
             </div>
           </div>
-          <button
-            onClick={() => setStep("quiz")}
-            className="w-full rounded-xl bg-[var(--ink-primary)] py-3 text-sm font-semibold text-[#0a0a0a] hover:opacity-90"
-          >
-            Continue to questions
-          </button>
-        </div>
-      )}
 
-      {step === "quiz" && (
-        <div className="mt-6 space-y-6">
-          {node.quiz.map((q, qi) => (
-            <div key={q.id}>
-              <p className="text-sm font-medium text-[var(--ink-primary)]">
-                {qi + 1}. {q.question}
-              </p>
-              <div className="mt-2 space-y-2">
-                {q.options.map((opt, oi) => (
-                  <label
+          <div>
+            <p className="text-sm font-medium text-[var(--ink-primary)]">{question.question}</p>
+            <div className="mt-2 space-y-2">
+              {question.options.map((opt, oi) => {
+                const isPicked = answerIdx === oi;
+                const revealed = answerIdx !== null;
+                const isCorrectOption = oi === question.correctIndex;
+                return (
+                  <button
                     key={oi}
-                    className={`flex cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-2 text-sm transition-colors ${
-                      answers[q.id] === oi
-                        ? "border-[var(--accent)] bg-[var(--accent-soft)]"
-                        : "border-[var(--border-hairline)] hover:border-[var(--border-strong)]"
+                    disabled={revealed}
+                    onClick={() => setAnswerIdx(oi)}
+                    className={`flex w-full items-center gap-2.5 rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+                      revealed && isCorrectOption
+                        ? "border-[var(--good)] bg-[var(--good)]/10"
+                        : revealed && isPicked
+                          ? "border-[var(--critical)] bg-[var(--critical)]/10"
+                          : "border-[var(--border-hairline)] hover:border-[var(--border-strong)]"
                     }`}
                   >
-                    <input
-                      type="radio"
-                      name={q.id}
-                      className="accent-[var(--accent)]"
-                      checked={answers[q.id] === oi}
-                      onChange={() => setAnswers((a) => ({ ...a, [q.id]: oi }))}
-                    />
                     <span className="text-[var(--ink-secondary)]">{opt}</span>
-                  </label>
-                ))}
-              </div>
+                  </button>
+                );
+              })}
             </div>
-          ))}
+          </div>
+
+          {answerIdx !== null && (
+            <motion.div
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              className={`rounded-xl border p-3.5 ${
+                correct ? "border-[var(--good)]/30 bg-[var(--good)]/10" : "border-[var(--critical)]/30 bg-[var(--critical)]/10"
+              }`}
+            >
+              <p className="text-sm font-medium" style={{ color: correct ? "var(--good)" : "var(--critical)" }}>
+                {correct ? "✓ Correct" : "✕ Not quite"}
+              </p>
+              <p className="mt-1 text-sm text-[var(--ink-secondary)]">{question.explanation}</p>
+            </motion.div>
+          )}
+
           <button
-            onClick={submitQuiz}
-            disabled={Object.keys(answers).length < node.quiz.length}
+            onClick={() => {
+              const confidence = CONFIDENCE_LEVELS[confidenceIdx ?? 1].value;
+              onComplete(confidence, correct ? 100 : 0);
+            }}
+            disabled={answerIdx === null || confidenceIdx === null}
             className="w-full rounded-xl bg-[var(--ink-primary)] py-3 text-sm font-semibold text-[#0a0a0a] hover:opacity-90 disabled:opacity-40"
           >
-            Submit
+            {answerIdx === null ? "Pick an answer" : correct ? "Save & unlock next concepts" : "Save & review again later"}
           </button>
         </div>
       )}
-
-      {step === "result" && (
-        <ResultView node={node} confidence={confidence} score={score} answers={answers} onSave={() => onComplete(confidence, score)} />
-      )}
     </>
-  );
-}
-
-function ResultView({
-  node,
-  confidence,
-  score,
-  answers,
-  onSave,
-}: {
-  node: ConceptNode;
-  confidence: number;
-  score: number;
-  answers: Record<string, number>;
-  onSave: () => void;
-}) {
-  const delta = confidence - score;
-  const passed = score >= 70;
-  let calibrationNote: string;
-  if (Math.abs(delta) <= 10) calibrationNote = "Well-calibrated — your confidence matched your result.";
-  else if (delta > 10) calibrationNote = "Overconfident — you scored lower than you predicted.";
-  else calibrationNote = "Underconfident — you scored higher than you predicted.";
-
-  return (
-    <div className="mt-6 space-y-5">
-      <div className="rounded-xl border border-[var(--border-hairline)] bg-[var(--surface-2)] p-4 text-center">
-        <p className="font-display text-3xl font-semibold" style={{ color: passed ? "var(--good)" : "var(--critical)" }}>
-          {score}%
-        </p>
-        <p className="mt-1 text-xs text-[var(--ink-muted)]">
-          predicted {confidence}% · {calibrationNote}
-        </p>
-      </div>
-
-      <div className="space-y-4">
-        {node.quiz.map((q, qi) => {
-          const correct = answers[q.id] === q.correctIndex;
-          return (
-            <div key={q.id} className="text-sm">
-              <p className="text-[var(--ink-primary)]">
-                {qi + 1}. {q.question}
-              </p>
-              <p className={`mt-1 ${correct ? "text-[var(--good)]" : "text-[var(--critical)]"}`}>
-                {correct ? "✓ Correct" : `✕ You picked: ${q.options[answers[q.id]]}`}
-              </p>
-              <p className="mt-1 text-[var(--ink-secondary)]">{q.explanation}</p>
-            </div>
-          );
-        })}
-      </div>
-
-      <button
-        onClick={onSave}
-        className="w-full rounded-xl bg-[var(--ink-primary)] py-3 text-sm font-semibold text-[#0a0a0a] hover:opacity-90"
-      >
-        {passed ? "Save & unlock next concepts" : "Save & try again later"}
-      </button>
-    </div>
   );
 }
