@@ -30,9 +30,12 @@ Concepts within a topic unlock strictly in sequence — you can't skip ahead.
 ## Stack
 
 Next.js (App Router) · TypeScript · Tailwind CSS v4 · Zustand (persisted store) · Gemini API
-(`@google/generative-ai`)
+(`@google/generative-ai`) · Vercel Blob (`@vercel/blob`)
 
-All progress lives in `localStorage` — no backend, no accounts, fully private to your browser.
+Progress lives in `localStorage` first — no accounts, fully private to your browser, works
+offline. `/settings` adds an optional manual cloud backup/restore against a single JSON blob,
+gated by a passcode only you know (see below) — there's no automatic background sync, so two
+devices never silently clobber each other; you choose when to push or pull.
 
 ## Running locally
 
@@ -42,7 +45,21 @@ cp .env.local.example .env.local   # add a free Gemini key — required, there's
 npm run dev
 ```
 
+## Cloud backup (optional)
+
+1. In the Vercel project dashboard → Storage, connect a **Blob** store. This injects
+   `BLOB_READ_WRITE_TOKEN` into the deployed environment automatically.
+2. Pick your own passcode and set `SYNC_PASSCODE` (deployment env var, and in `.env.local` for
+   local dev). For local dev, also pull `BLOB_READ_WRITE_TOKEN` into `.env.local` (`vercel env
+   pull`, or copy it from the dashboard).
+3. Enter the same passcode on `/settings` in the app, then use "Back up to cloud" / "Restore
+   from cloud".
+
+Without `SYNC_PASSCODE` configured, `/settings` just says sync isn't set up — everything else
+keeps working from `localStorage` alone.
+
 ## Deploying
 
-Push to GitHub, import into Vercel, add `GEMINI_API_KEY` as an environment variable in the Vercel
-project settings (server-side only — never exposed to the client).
+Push to GitHub, import into Vercel, add `GEMINI_API_KEY` and (optionally) `SYNC_PASSCODE` as
+environment variables in the Vercel project settings (server-side only — never exposed to the
+client).

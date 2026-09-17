@@ -7,6 +7,14 @@ export default function Header() {
         <Link href="/" className="font-display text-lg italic tracking-tight">
           Strata
         </Link>
+        <nav className="flex items-center gap-5 text-sm text-[var(--ink-soft)]">
+          <Link href="/review" className="hover:text-[var(--ink)]">
+            Review
+          </Link>
+          <Link href="/settings" className="hover:text-[var(--ink)]">
+            Settings
+          </Link>
+        </nav>
       </div>
     </header>
   );

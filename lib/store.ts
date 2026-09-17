@@ -19,6 +19,7 @@ interface StrataState {
   markLearned: (topicId: string, conceptId: string) => void;
   recordReview: (topicId: string, conceptId: string, score: number, fluencyWarning: boolean) => void;
   resetAll: () => void;
+  replaceAllTopics: (topics: Topic[]) => void;
 }
 
 function makeId(): string {
@@ -101,6 +102,8 @@ export const useStrataStore = create<StrataState>()(
         })),
 
       resetAll: () => set({ topics: [] }),
+
+      replaceAllTopics: (topics) => set({ topics }),
     }),
     { name: "strata_topics_v1" },
   ),
