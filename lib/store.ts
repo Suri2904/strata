@@ -1,119 +1,107 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { Curriculum, ConceptNode, NodeProgress, NodeStatus, SessionLogEntry } from "./types";
-import { scheduleNextReview } from "./spacedRepetition";
+import { Concept, ConceptDetail, StartingLevel, Topic } from "./types";
+import { scheduleAfterReview, scheduleFirstLearned } from "./spacedRepetition";
 
-function progressKey(curriculumSlug: string, nodeId: string) {
-  return `${curriculumSlug}::${nodeId}`;
+interface RawConcept {
+  id: string;
+  title: string;
+  oneLiner: string;
 }
 
 interface StrataState {
-  curricula: Record<string, Curriculum>;
-  progress: Record<string, NodeProgress>;
-  sessionLog: SessionLogEntry[];
+  topics: Topic[];
 
-  addCurriculum: (c: Curriculum) => void;
-  deleteCurriculum: (slug: string) => void;
-  getNodeStatus: (slug: string, node: ConceptNode) => NodeStatus;
-  recordAttempt: (
-    curriculum: Curriculum,
-    node: ConceptNode,
-    confidencePrediction: number,
-    quizScore: number,
-  ) => void;
+  addTopic: (name: string, level: StartingLevel, rawConcepts: RawConcept[]) => Topic;
+  deleteTopic: (topicId: string) => void;
+  markAttentionGateShown: (topicId: string) => void;
+  saveDetail: (topicId: string, conceptId: string, detail: ConceptDetail) => void;
+  markLearned: (topicId: string, conceptId: string) => void;
+  recordReview: (topicId: string, conceptId: string, score: number, fluencyWarning: boolean) => void;
   resetAll: () => void;
 }
 
-const MASTERY_THRESHOLD = 70;
+function makeId(): string {
+  return Math.random().toString(36).slice(2, 10);
+}
 
 export const useStrataStore = create<StrataState>()(
   persist(
-    (set, get) => ({
-      curricula: {},
-      progress: {},
-      sessionLog: [],
+    (set) => ({
+      topics: [],
 
-      addCurriculum: (c) =>
+      addTopic: (name, level, rawConcepts) => {
+        const topic: Topic = {
+          id: makeId(),
+          name,
+          level,
+          createdAt: new Date().toISOString(),
+          attentionGateShown: false,
+          concepts: rawConcepts.map((c): Concept => ({
+            id: c.id,
+            title: c.title,
+            oneLiner: c.oneLiner,
+            status: "new",
+            box: 0,
+            nextReview: null,
+            detail: null,
+          })),
+        };
+        set((state) => ({ topics: [...state.topics, topic] }));
+        return topic;
+      },
+
+      deleteTopic: (topicId) =>
+        set((state) => ({ topics: state.topics.filter((t) => t.id !== topicId) })),
+
+      markAttentionGateShown: (topicId) =>
         set((state) => ({
-          curricula: { ...state.curricula, [c.slug]: c },
+          topics: state.topics.map((t) => (t.id === topicId ? { ...t, attentionGateShown: true } : t)),
         })),
 
-      deleteCurriculum: (slug) =>
+      saveDetail: (topicId, conceptId, detail) =>
+        set((state) => ({
+          topics: state.topics.map((t) =>
+            t.id !== topicId
+              ? t
+              : { ...t, concepts: t.concepts.map((c) => (c.id === conceptId ? { ...c, detail } : c)) },
+          ),
+        })),
+
+      markLearned: (topicId, conceptId) =>
         set((state) => {
-          const remainingCurricula = Object.fromEntries(
-            Object.entries(state.curricula).filter(([s]) => s !== slug),
-          );
-          const remainingProgress = Object.fromEntries(
-            Object.entries(state.progress).filter(([, p]) => p.curriculumSlug !== slug),
-          );
-          const remainingSessionLog = state.sessionLog.filter((s) => s.curriculumSlug !== slug);
-          return { curricula: remainingCurricula, progress: remainingProgress, sessionLog: remainingSessionLog };
+          const { box, nextReview } = scheduleFirstLearned();
+          return {
+            topics: state.topics.map((t) =>
+              t.id !== topicId
+                ? t
+                : {
+                    ...t,
+                    concepts: t.concepts.map((c) =>
+                      c.id === conceptId ? { ...c, status: "learned", box, nextReview } : c,
+                    ),
+                  },
+            ),
+          };
         }),
 
-      getNodeStatus: (slug, node) => {
-        const key = progressKey(slug, node.id);
-        const existing = get().progress[key];
-        if (existing?.status === "mastered") return "mastered";
-        if (node.prerequisites.length === 0) return "available";
-        const allPrereqsMastered = node.prerequisites.every((prereqId) => {
-          const p = get().progress[progressKey(slug, prereqId)];
-          return p?.status === "mastered";
-        });
-        return allPrereqsMastered ? "available" : "locked";
-      },
+      recordReview: (topicId, conceptId, score, fluencyWarning) =>
+        set((state) => ({
+          topics: state.topics.map((t) => {
+            if (t.id !== topicId) return t;
+            return {
+              ...t,
+              concepts: t.concepts.map((c) => {
+                if (c.id !== conceptId) return c;
+                const { box, nextReview } = scheduleAfterReview(c.box, score, fluencyWarning);
+                return { ...c, box, nextReview };
+              }),
+            };
+          }),
+        })),
 
-      recordAttempt: (curriculum, node, confidencePrediction, quizScore) => {
-        const key = progressKey(curriculum.slug, node.id);
-        const now = new Date();
-        const nowIso = now.toISOString();
-        set((state) => {
-          const existing = state.progress[key];
-          const wasAlreadyMastered = existing?.status === "mastered";
-          const passed = quizScore >= MASTERY_THRESHOLD;
-
-          const { nextReviewAt, reviewStep } = scheduleNextReview(
-            existing?.reviewStep ?? 0,
-            quizScore,
-            node.retention,
-            now,
-          );
-
-          const newProgress: NodeProgress = {
-            nodeId: node.id,
-            curriculumSlug: curriculum.slug,
-            status: passed || wasAlreadyMastered ? "mastered" : "available",
-            confidencePrediction,
-            quizScore,
-            masteredAt: existing?.masteredAt ?? (passed ? nowIso : undefined),
-            lastReviewedAt: nowIso,
-            nextReviewAt,
-            reviewStep,
-            reviewHistory: [
-              ...(existing?.reviewHistory ?? []),
-              { at: nowIso, quizScore, confidencePrediction },
-            ],
-          };
-
-          const logEntry: SessionLogEntry = {
-            at: nowIso,
-            curriculumSlug: curriculum.slug,
-            curriculumTopic: curriculum.topic,
-            nodeId: node.id,
-            nodeTitle: node.title,
-            type: wasAlreadyMastered ? "review" : "first-mastery",
-            confidencePrediction,
-            quizScore,
-          };
-
-          return {
-            progress: { ...state.progress, [key]: newProgress },
-            sessionLog: [...state.sessionLog, logEntry],
-          };
-        });
-      },
-
-      resetAll: () => set({ curricula: {}, progress: {}, sessionLog: [] }),
+      resetAll: () => set({ topics: [] }),
     }),
-    { name: "strata-store-v1" },
+    { name: "strata_topics_v1" },
   ),
 );

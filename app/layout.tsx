@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
-import { Space_Grotesk, Inter } from "next/font/google";
+import { Fraunces, Inter } from "next/font/google";
 import "./globals.css";
 
-const spaceGrotesk = Space_Grotesk({
-  variable: "--font-space-grotesk",
+const fraunces = Fraunces({
+  variable: "--font-fraunces",
   subsets: ["latin"],
-  weight: ["500", "600", "700"],
+  weight: ["400", "500", "600"],
+  style: ["normal", "italic"],
 });
 
 const inter = Inter({
@@ -15,15 +16,15 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Strata — a learning engine",
+  title: "Strata",
   description:
-    "Type any topic. Get the exact order you need to learn it in to reach foundational mastery — then a system that keeps you executing until it sticks.",
+    "Learn any topic from foundation to mastery through hook, prediction, elaboration, retrieval, and consequence — not flashcards.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className={`${spaceGrotesk.variable} ${inter.variable}`}>{children}</body>
+      <body className={`${fraunces.variable} ${inter.variable}`}>{children}</body>
     </html>
   );
 }

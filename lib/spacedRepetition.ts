@@ -1,58 +1,49 @@
-import { RetentionSpeed } from "./types";
-
-/** Base interval ladder in days, before the retention-speed multiplier. */
-const BASE_STEPS = [1, 3, 7, 16, 35, 75, 160];
-
-const RETENTION_MULTIPLIER: Record<RetentionSpeed, number> = {
-  // Fast-decaying knowledge (trivia, syntax, fresh vocabulary) needs closer review.
-  fast: 0.6,
-  medium: 1,
-  // Slow-decaying knowledge (formal math, first-principles physics) tolerates longer gaps.
-  slow: 1.5,
-};
+/** Leitner boxes 0-4, review intervals in days per box. */
+const INTERVALS_DAYS = [1, 3, 7, 16, 35];
+const MAX_BOX = INTERVALS_DAYS.length - 1;
 
 export interface ScheduleResult {
-  nextReviewAt: string;
-  reviewStep: number;
+  box: number;
+  nextReview: string;
   intervalDays: number;
 }
 
-/**
- * Given how a review went, compute the next step index and the resulting due date.
- * - score >= 85: advance two steps (strong recall, stretch the interval)
- * - score >= 70: advance one step (normal pass)
- * - score >= 50: hold the same step (shaky, review again at the same cadence)
- * - score <  50: drop back to step 0 (forgotten, needs to be re-anchored)
- */
-export function scheduleNextReview(
-  currentStep: number,
-  quizScore: number,
-  retention: RetentionSpeed,
-  from: Date = new Date(),
-): ScheduleResult {
-  let nextStep: number;
-  if (quizScore >= 85) nextStep = currentStep + 2;
-  else if (quizScore >= 70) nextStep = currentStep + 1;
-  else if (quizScore >= 50) nextStep = currentStep;
-  else nextStep = 0;
-
-  nextStep = Math.max(0, Math.min(nextStep, BASE_STEPS.length - 1));
-
-  const baseDays = BASE_STEPS[nextStep];
-  const intervalDays = Math.max(1, Math.round(baseDays * RETENTION_MULTIPLIER[retention]));
-
+function atInterval(box: number, from: Date): ScheduleResult {
+  const days = INTERVALS_DAYS[box];
   const next = new Date(from);
-  next.setDate(next.getDate() + intervalDays);
-
-  return { nextReviewAt: next.toISOString(), reviewStep: nextStep, intervalDays };
+  next.setDate(next.getDate() + days);
+  return { box, nextReview: next.toISOString(), intervalDays: days };
 }
 
-export function isDue(nextReviewAt: string | undefined, now: Date = new Date()): boolean {
-  if (!nextReviewAt) return false;
-  return new Date(nextReviewAt).getTime() <= now.getTime();
+/** A newly-learned concept starts at box 0, due tomorrow. */
+export function scheduleFirstLearned(from: Date = new Date()): ScheduleResult {
+  return atInterval(0, from);
+}
+
+/**
+ * Grade >=4 with no fluency warning: harder-to-repeat material earns a longer gap, box+1.
+ * Grade <=2, or any fluency warning (fluent-sounding but hollow): back to box 0, daily review.
+ * Grade ==3 with no warning: shaky but not wrong, hold the current box.
+ */
+export function scheduleAfterReview(
+  box: number,
+  score: number,
+  fluencyWarning: boolean,
+  from: Date = new Date(),
+): ScheduleResult {
+  let nextBox: number;
+  if (score >= 4 && !fluencyWarning) nextBox = Math.min(box + 1, MAX_BOX);
+  else if (score <= 2 || fluencyWarning) nextBox = 0;
+  else nextBox = box;
+
+  return atInterval(nextBox, from);
+}
+
+export function isDue(nextReview: string | null, now: Date = new Date()): boolean {
+  if (!nextReview) return false;
+  return new Date(nextReview).getTime() <= now.getTime();
 }
 
 export function daysUntil(iso: string, now: Date = new Date()): number {
-  const ms = new Date(iso).getTime() - now.getTime();
-  return Math.ceil(ms / (1000 * 60 * 60 * 24));
+  return Math.ceil((new Date(iso).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 }

@@ -1,77 +1,54 @@
-export type NodeStatus = "locked" | "available" | "mastered";
+export type ConceptStatus = "new" | "learned";
 
-export type RetentionSpeed = "slow" | "medium" | "fast";
+export type StartingLevel = "beginner" | "some-familiarity" | "solid-basics";
 
-export interface QuizQuestion {
-  id: string;
-  question: string;
-  options: string[];
-  correctIndex: number;
-  explanation: string;
+export const STARTING_LEVELS: { value: StartingLevel; label: string }[] = [
+  { value: "beginner", label: "Complete beginner" },
+  { value: "some-familiarity", label: "Some familiarity, foundations shaky" },
+  { value: "solid-basics", label: "Solid basics, want depth" },
+];
+
+export interface ConceptDiagram {
+  left: string;
+  right: string;
+  relation: string;
 }
 
-/**
- * A first-principles explanation, not a definition. Each field is a stage of actually
- * building the idea up from what's already known, rather than stating it and moving on.
- */
-export interface ConceptExplanation {
-  /** What we're taking as already established — the ground this reasoning starts from. */
-  foundation: string;
-  /** The derivation itself: reason forward from the foundation toward the concept. This is
-   *  the core teaching content — multiple paragraphs, showing the "why", not asserting the "what". */
-  reasoning: string;
-  /** The precise, formal statement of the concept — given only after the reasoning has earned it. */
-  formalStatement: string;
-  /** A concrete worked example that grounds the abstraction in something specific. */
-  example: string;
-  /** A specific, named misconception people actually have here, and why it's wrong. */
-  misconception: string;
+/** The cached deep-dive response for a concept's Reveal stage — generated once, never re-called. */
+export interface ConceptDetail {
+  hookQuestion: string;
+  coreIdea: string;
+  why: string;
+  connection: string;
+  analogy: string;
+  diagram: ConceptDiagram;
+  classification: "derivable" | "arbitrary";
+  classificationReason: string;
 }
 
-export interface ConceptNode {
+export interface Concept {
   id: string;
   title: string;
-  /** 0 = most foundational. Higher = deeper / more advanced. */
-  depth: number;
-  explanation: ConceptExplanation;
-  /** One sentence: why this has to come before what it unlocks. */
-  whyItMatters: string;
-  prerequisites: string[];
-  estMinutes: number;
-  /** How fast this kind of knowledge decays without review. Drives spaced-repetition interval. */
-  retention: RetentionSpeed;
-  quiz: QuizQuestion[];
+  oneLiner: string;
+  status: ConceptStatus;
+  /** Leitner box, 0-4. */
+  box: number;
+  nextReview: string | null;
+  detail: ConceptDetail | null;
 }
 
-export interface Curriculum {
-  slug: string;
-  topic: string;
-  tagline: string;
-  generatedAt: string;
-  source: "mock" | "gemini";
-  nodes: ConceptNode[];
+export interface Topic {
+  id: string;
+  name: string;
+  level: StartingLevel;
+  createdAt: string;
+  concepts: Concept[];
+  /** The one-time attention-gating line is shown once per topic, then never again. */
+  attentionGateShown: boolean;
 }
 
-export interface NodeProgress {
-  nodeId: string;
-  curriculumSlug: string;
-  status: NodeStatus;
-  confidencePrediction?: number;
-  quizScore?: number;
-  masteredAt?: string;
-  lastReviewedAt?: string;
-  nextReviewAt?: string;
-  reviewStep: number;
-  reviewHistory: { at: string; quizScore: number; confidencePrediction: number }[];
-}
-
-export interface SessionLogEntry {
-  at: string;
-  curriculumSlug: string;
-  curriculumTopic: string;
-  nodeId: string;
-  nodeTitle: string;
-  type: "first-mastery" | "review";
-  confidencePrediction: number;
-  quizScore: number;
+export interface RetrieveGrade {
+  score: number;
+  feedback: string;
+  fluencyWarning: boolean;
 }

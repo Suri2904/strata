@@ -1,32 +1,48 @@
 # Strata
 
-A personal learning engine. Type any topic, get an AI-generated **prerequisite graph** — the actual order concepts need to be learned in to reach near-foundational mastery — then work through it with confidence-calibrated quizzes and spaced-repetition review scheduled around each concept's real retention half-life.
+A personal tool for learning any topic from foundation to mastery, built around how memory
+encoding actually works — not "read and quiz" flashcards.
 
-**Live:** _(add your Vercel URL here after deploying)_
+## How it teaches
 
-## How it's built
+Every concept in a topic goes through the same five-stage pipeline, each stage mapping to a
+specific encoding principle:
 
-- **Mastery Map** (`/map/[slug]`) — a topic's concepts laid out in dependency layers. Locked concepts unlock as their prerequisites are mastered. Every check starts with a confidence prediction, then a quiz, then a calibration readout comparing the two.
-- **Execution Loop** (`/loop`) — the companion dashboard: a due-for-review queue driven by spaced repetition (interval scaled by each concept's `retention` speed — slow/medium/fast), a compounding chart of concepts mastered over time, a session-cadence chart against your own rolling average, a streak counter, and a friction nudge that surfaces the single smallest next action when you've gone quiet.
-- **Curated paths** — Special Relativity and Bayesian Thinking ship fully written, no API key required.
-- **Generated paths** — any other topic is generated at request time via the Gemini API (`/api/generate`), using a structured JSON schema so the response is always a valid prerequisite DAG.
+1. **Hook** — a genuine, specific curiosity question this concept will answer (generation effect).
+2. **Predict** — you type your best guess before seeing any explanation (self-generated content
+   encodes stronger than passively received content).
+3. **Reveal** — core idea, the causal "why," how it connects to something you already learned, a
+   concrete analogy, a two-node diagram, and a Derivable/Arbitrary tag telling you where to spend
+   reasoning effort vs. rote memorization.
+4. **Retrieve** — you explain the concept from memory, with no notes visible. An AI grader scores
+   it 1–5 with specific, honest feedback, and separately flags a fluency warning if the answer
+   sounds confident but is short on real content.
+5. **So-What** — you state what understanding this actually changes for you — a prediction, a
+   decision, a link to something else you know. An AI checker calls out whether that's real or
+   just restated information.
 
-All progress is stored in `localStorage` — no backend, no accounts, fully private to your browser.
+Once a concept clears all five stages it's marked learned and enters spaced repetition —
+Leitner boxes 0–4 with intervals of 1/3/7/16/35 days. A review is retrieve-only: a good, warning-free
+answer pushes the box (and the interval) up; a weak or falsely-fluent one resets it to daily review.
+
+Concepts within a topic unlock strictly in sequence — you can't skip ahead.
 
 ## Stack
 
-Next.js (App Router) · TypeScript · Tailwind CSS v4 · Zustand (persisted store) · Framer Motion · Gemini API (`@google/generative-ai`) · hand-rolled SVG charts (no charting library)
+Next.js (App Router) · TypeScript · Tailwind CSS v4 · Zustand (persisted store) · Gemini API
+(`@google/generative-ai`)
+
+All progress lives in `localStorage` — no backend, no accounts, fully private to your browser.
 
 ## Running locally
 
 ```bash
 npm install
-cp .env.local.example .env.local   # optional — add a free Gemini key to unlock arbitrary topics
+cp .env.local.example .env.local   # add a free Gemini key — required, there's no offline fallback
 npm run dev
 ```
 
-Without a `GEMINI_API_KEY`, the two curated paths (Special Relativity, Bayesian Thinking) work fully; any other topic shows a message explaining the key is missing instead of failing silently.
-
 ## Deploying
 
-Push to GitHub, import into Vercel, add `GEMINI_API_KEY` as an environment variable in the Vercel project settings (server-side only — never exposed to the client).
+Push to GitHub, import into Vercel, add `GEMINI_API_KEY` as an environment variable in the Vercel
+project settings (server-side only — never exposed to the client).
