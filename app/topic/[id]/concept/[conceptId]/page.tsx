@@ -8,7 +8,7 @@ import ProgressStrip from "@/components/ProgressStrip";
 import Diagram from "@/components/Diagram";
 import { useStrataStore } from "@/lib/store";
 import { frontierIndex } from "@/lib/selectors";
-import { ConceptDetail, RetrieveGrade } from "@/lib/types";
+import { RetrieveGrade } from "@/lib/types";
 
 type Stage = "hook" | "predict" | "reveal" | "retrieve" | "sowhat";
 const STAGE_INDEX: Record<Stage, number> = { hook: 0, predict: 1, reveal: 2, retrieve: 3, sowhat: 4 };
@@ -26,7 +26,11 @@ export default function LearnConceptPage() {
   const concept = conceptIndex >= 0 ? topic!.concepts[conceptIndex] : undefined;
 
   const [stage, setStage] = useState<Stage>("hook");
-  const [detail, setDetail] = useState<ConceptDetail | null>(concept?.detail ?? null);
+  // Derived straight from the store rather than mirrored into local state: on a hard page
+  // load, Zustand's persist middleware hydrates from localStorage asynchronously, so a local
+  // useState seeded from `concept?.detail` at mount would freeze on whatever was there
+  // (usually nothing) before hydration ever ran, and never pick up the real cached value.
+  const detail = concept?.detail ?? null;
   const [detailError, setDetailError] = useState("");
   const loadingDetail = !detail && !detailError;
 
@@ -42,12 +46,10 @@ export default function LearnConceptPage() {
   const [soWhatError, setSoWhatError] = useState("");
   const [submittingSoWhat, setSubmittingSoWhat] = useState(false);
 
-  const showAttentionGate = conceptIndex === 0 && topic && !topic.attentionGateShown;
-
-  useEffect(() => {
-    if (showAttentionGate && topic) markAttentionGateShown(topic.id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // A pure derivation, not local state — it's only marked shown (in the Hook stage's button
+  // handler below) once the learner actually moves on, so simply rendering this stage never
+  // itself flips the flag and yanks the line away before they've read it.
+  const showAttentionGate = conceptIndex === 0 && !topic?.attentionGateShown;
 
   useEffect(() => {
     if (detail || detailError || !topic || !concept) return;
@@ -68,12 +70,11 @@ export default function LearnConceptPage() {
           setDetailError(body.message ?? "Couldn't generate this concept.");
           return;
         }
-        setDetail(body.detail);
         saveDetail(topic.id, concept.id, body.detail);
       })
       .catch(() => setDetailError("Couldn't reach the generator. Check your connection and try again."));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [detail, detailError]);
+  }, [detail, detailError, topic?.id, concept?.id]);
 
   if (!topic || !concept) {
     return (
@@ -200,7 +201,10 @@ export default function LearnConceptPage() {
               <p className="text-xs uppercase tracking-wide text-[var(--ink-faint)]">{concept.title}</p>
               <h1 className="font-display mt-3 text-2xl leading-snug">{detail.hookQuestion}</h1>
               <button
-                onClick={() => setStage("predict")}
+                onClick={() => {
+                  if (showAttentionGate) markAttentionGateShown(safeTopic.id);
+                  setStage("predict");
+                }}
                 className="mt-8 rounded-lg px-5 py-2.5 text-sm font-semibold text-[var(--paper)]"
                 style={{ background: "var(--ink)" }}
               >
