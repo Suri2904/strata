@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Header from "@/components/Header";
 import { useStrataStore } from "@/lib/store";
 import { Topic } from "@/lib/types";
+import { calibrationStats } from "@/lib/selectors";
 
 const PASSCODE_KEY = "strata_passcode";
 
@@ -11,17 +12,26 @@ type SyncState = "idle" | "working" | "no-passcode" | "unauthorized" | "error";
 
 export default function SettingsPage() {
   const topics = useStrataStore((s) => s.topics);
+  const calibrationLog = useStrataStore((s) => s.calibrationLog);
   const replaceAllTopics = useStrataStore((s) => s.replaceAllTopics);
   const resetAll = useStrataStore((s) => s.resetAll);
+  const stats = calibrationStats(calibrationLog);
 
-  // Lazy initializer (not an effect) since this route is statically prerendered server-side,
-  // where localStorage doesn't exist — it only actually reads the stored value on the client.
-  const [passcode, setPasscode] = useState(() =>
-    typeof window === "undefined" ? "" : localStorage.getItem(PASSCODE_KEY) ?? "",
-  );
+  const [passcode, setPasscode] = useState("");
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [state, setState] = useState<SyncState>("idle");
   const [message, setMessage] = useState("");
+
+  // Reading localStorage inside a lazy useState initializer would make the very first client
+  // render (during hydration) disagree with the server's static-prerendered HTML — e.g. a
+  // disabled={!passcode} button would render disabled on the server but not on the client,
+  // a genuine hydration mismatch, not just a lint nag. An effect runs only after hydration
+  // completes, so this update lands as an ordinary post-hydration re-render instead.
+  useEffect(() => {
+    const stored = localStorage.getItem(PASSCODE_KEY);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (stored) setPasscode(stored);
+  }, []);
 
   function savePasscode(value: string) {
     setPasscode(value);
@@ -149,6 +159,30 @@ export default function SettingsPage() {
               Restore from cloud
             </button>
           </div>
+        </section>
+
+        <section className="mt-10 border-t border-[var(--border-hairline)] pt-8">
+          <h2 className="font-display text-base">Calibration</h2>
+          {stats ? (
+            <div className="mt-3 space-y-1.5 text-sm text-[var(--ink-soft)]">
+              <p>
+                Across {stats.count} graded answer{stats.count === 1 ? "" : "s"}, your confidence was off by{" "}
+                <span className="font-medium text-[var(--ink)]">{stats.meanAbsError} points</span> on average (0–100
+                scale).
+              </p>
+              <p>
+                {Math.abs(stats.bias) < 5
+                  ? "Your confidence tracks your actual accuracy well."
+                  : stats.bias < 0
+                    ? `You tend to run overconfident — actual scores come in ${Math.abs(stats.bias)} points below what you predicted, on average.`
+                    : `You tend to run underconfident — actual scores come in ${stats.bias} points above what you predicted, on average.`}
+              </p>
+            </div>
+          ) : (
+            <p className="mt-3 text-sm text-[var(--ink-soft)]">
+              No graded answers yet — calibration tracks how well your confidence matches your actual scores.
+            </p>
+          )}
         </section>
 
         <section className="mt-10 border-t border-[var(--border-hairline)] pt-8">

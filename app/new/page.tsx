@@ -4,16 +4,18 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Header from "@/components/Header";
 import { useStrataStore } from "@/lib/store";
-import { STARTING_LEVELS, StartingLevel } from "@/lib/types";
+import { STARTING_LEVELS, StartingLevel, TARGET_DEPTHS, TargetDepth } from "@/lib/types";
 
 type FetchState = "idle" | "loading" | "no-key" | "error";
 
 export default function NewTopicPage() {
   const router = useRouter();
   const addTopic = useStrataStore((s) => s.addTopic);
+  const setVerificationNote = useStrataStore((s) => s.setVerificationNote);
 
   const [name, setName] = useState("");
   const [level, setLevel] = useState<StartingLevel>("beginner");
+  const [targetDepth, setTargetDepth] = useState<TargetDepth>("working");
   const [state, setState] = useState<FetchState>("idle");
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -27,7 +29,7 @@ export default function NewTopicPage() {
       const res = await fetch("/api/curriculum", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic: topicName, level }),
+        body: JSON.stringify({ topic: topicName, level, targetDepth }),
       });
       const body = await res.json();
       if (res.status === 501) {
@@ -39,8 +41,23 @@ export default function NewTopicPage() {
         setState("error");
         return;
       }
-      const topic = addTopic(topicName, level, body.concepts);
-      router.push(`/topic/${topic.id}`);
+      const topic = addTopic(topicName, level, targetDepth, body.concepts);
+
+      // Non-blocking: sanity-check the ordering in the background, don't make the learner wait on it.
+      fetch("/api/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ topic: topicName, concepts: body.concepts }),
+      })
+        .then((r) => r.json())
+        .then((v) => {
+          if (v.ok === false && Array.isArray(v.issues) && v.issues.length) {
+            setVerificationNote(topic.id, v.issues.join(" "));
+          }
+        })
+        .catch(() => {});
+
+      router.push(`/topic/${topic.id}/diagnostic`);
     } catch {
       setErrorMessage("Couldn't reach the generator. Check your connection and try again.");
       setState("error");
@@ -83,6 +100,24 @@ export default function NewTopicPage() {
               {STARTING_LEVELS.map((l) => (
                 <option key={l.value} value={l.value}>
                   {l.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-[var(--ink-soft)]" htmlFor="depth">
+              Target depth
+            </label>
+            <select
+              id="depth"
+              value={targetDepth}
+              onChange={(e) => setTargetDepth(e.target.value as TargetDepth)}
+              className="mt-2 w-full border-b border-[var(--border-strong)] bg-transparent py-2 text-base outline-none focus:border-[var(--accent)]"
+            >
+              {TARGET_DEPTHS.map((d) => (
+                <option key={d.value} value={d.value}>
+                  {d.label}
                 </option>
               ))}
             </select>

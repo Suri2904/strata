@@ -13,6 +13,14 @@ import { RetrieveGrade } from "@/lib/types";
 type Stage = "hook" | "predict" | "reveal" | "retrieve" | "sowhat";
 const STAGE_INDEX: Record<Stage, number> = { hook: 0, predict: 1, reveal: 2, retrieve: 3, sowhat: 4 };
 
+const CONFIDENCE_LEVELS = [
+  { label: "Guessing", value: 20 },
+  { label: "Fairly sure", value: 55 },
+  { label: "Confident", value: 90 },
+] as const;
+
+const MAX_HINTS = 3;
+
 export default function LearnConceptPage() {
   const { id, conceptId } = useParams<{ id: string; conceptId: string }>();
   const router = useRouter();
@@ -21,6 +29,8 @@ export default function LearnConceptPage() {
   const saveDetail = useStrataStore((s) => s.saveDetail);
   const markLearned = useStrataStore((s) => s.markLearned);
   const markAttentionGateShown = useStrataStore((s) => s.markAttentionGateShown);
+  const flagConcept = useStrataStore((s) => s.flagConcept);
+  const logCalibration = useStrataStore((s) => s.logCalibration);
 
   const conceptIndex = topic?.concepts.findIndex((c) => c.id === conceptId) ?? -1;
   const concept = conceptIndex >= 0 ? topic!.concepts[conceptIndex] : undefined;
@@ -33,9 +43,14 @@ export default function LearnConceptPage() {
   const detail = concept?.detail ?? null;
   const [detailError, setDetailError] = useState("");
   const loadingDetail = !detail && !detailError;
+  const [regenerating, setRegenerating] = useState(false);
 
   const [prediction, setPrediction] = useState("");
+  const [hints, setHints] = useState<string[]>([]);
+  const [hintLoading, setHintLoading] = useState(false);
+  const [hintError, setHintError] = useState("");
 
+  const [confidence, setConfidence] = useState<number | null>(null);
   const [retrieveAnswer, setRetrieveAnswer] = useState("");
   const [retrieveGrade, setRetrieveGrade] = useState<RetrieveGrade | null>(null);
   const [retrieveError, setRetrieveError] = useState("");
@@ -60,6 +75,7 @@ export default function LearnConceptPage() {
       body: JSON.stringify({
         topic: topic.name,
         level: topic.level,
+        targetDepth: topic.targetDepth,
         concept: { title: concept.title, oneLiner: concept.oneLiner },
         priorTitles,
       }),
@@ -109,8 +125,66 @@ export default function LearnConceptPage() {
   const safeTopic = topic;
   const safeConcept = concept;
 
+  async function requestHint() {
+    if (!detail || hints.length >= MAX_HINTS) return;
+    setHintLoading(true);
+    setHintError("");
+    try {
+      const res = await fetch("/api/hint", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          topic: safeTopic.name,
+          concept: { title: safeConcept.title, oneLiner: safeConcept.oneLiner },
+          hookQuestion: detail.hookQuestion,
+          priorAttempt: prediction,
+          hintLevel: hints.length + 1,
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        setHintError(body.message ?? "Couldn't get a hint right now.");
+        return;
+      }
+      setHints((h) => [...h, body.hint]);
+    } catch {
+      setHintError("Couldn't reach the hint generator. Check your connection and try again.");
+    } finally {
+      setHintLoading(false);
+    }
+  }
+
+  async function regenerateDetail() {
+    setRegenerating(true);
+    setDetailError("");
+    const priorTitles = safeTopic.concepts.slice(0, conceptIndex).map((c) => c.title);
+    try {
+      const res = await fetch("/api/deepdive", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          topic: safeTopic.name,
+          level: safeTopic.level,
+          targetDepth: safeTopic.targetDepth,
+          concept: { title: safeConcept.title, oneLiner: safeConcept.oneLiner },
+          priorTitles,
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        setDetailError(body.message ?? "Couldn't regenerate this concept.");
+        return;
+      }
+      saveDetail(safeTopic.id, safeConcept.id, body.detail);
+    } catch {
+      setDetailError("Couldn't reach the generator. Check your connection and try again.");
+    } finally {
+      setRegenerating(false);
+    }
+  }
+
   async function submitRetrieve() {
-    if (!retrieveAnswer.trim() || !detail) return;
+    if (!retrieveAnswer.trim() || !detail || confidence === null) return;
     setSubmittingRetrieve(true);
     setRetrieveError("");
     try {
@@ -122,6 +196,7 @@ export default function LearnConceptPage() {
           concept: { title: safeConcept.title, oneLiner: safeConcept.oneLiner },
           coreIdea: detail.coreIdea,
           why: detail.why,
+          misconceptions: detail.misconceptions,
           userAnswer: retrieveAnswer,
           isReview: false,
         }),
@@ -131,7 +206,15 @@ export default function LearnConceptPage() {
         setRetrieveError(body.message ?? "Couldn't grade that right now.");
         return;
       }
-      setRetrieveGrade(body.grade);
+      const grade: RetrieveGrade = body.grade;
+      setRetrieveGrade(grade);
+      logCalibration({
+        topicId: safeTopic.id,
+        conceptId: safeConcept.id,
+        stage: "retrieve",
+        predicted: confidence,
+        actual: grade.score * 20,
+      });
     } catch {
       setRetrieveError("Couldn't reach the grader. Check your connection and try again.");
     } finally {
@@ -163,7 +246,8 @@ export default function LearnConceptPage() {
   }
 
   function finish() {
-    markLearned(safeTopic.id, safeConcept.id);
+    if (!retrieveGrade) return;
+    markLearned(safeTopic.id, safeConcept.id, retrieveGrade.score, retrieveGrade.fluencyWarning);
     router.push(`/topic/${safeTopic.id}`);
   }
 
@@ -225,14 +309,33 @@ export default function LearnConceptPage() {
                 placeholder="Type your prediction…"
                 className="mt-4 w-full border-b border-[var(--border-strong)] py-2 text-base outline-none placeholder:text-[var(--ink-faint)] focus:border-[var(--accent)]"
               />
-              <button
-                onClick={() => setStage("reveal")}
-                disabled={!prediction.trim()}
-                className="mt-6 rounded-lg px-5 py-2.5 text-sm font-semibold text-[var(--paper)] disabled:opacity-40"
-                style={{ background: "var(--ink)" }}
-              >
-                See how close I was
-              </button>
+
+              {hints.map((h, i) => (
+                <p key={i} className="mt-3 rounded-md bg-[var(--accent-soft)] px-3 py-2 text-sm text-[var(--ink)]">
+                  {h}
+                </p>
+              ))}
+              {hintError && <p className="mt-3 text-sm text-[var(--warning)]">{hintError}</p>}
+
+              <div className="mt-4 flex items-center gap-4">
+                <button
+                  onClick={() => setStage("reveal")}
+                  disabled={!prediction.trim()}
+                  className="rounded-lg px-5 py-2.5 text-sm font-semibold text-[var(--paper)] disabled:opacity-40"
+                  style={{ background: "var(--ink)" }}
+                >
+                  See how close I was
+                </button>
+                {hints.length < MAX_HINTS && (
+                  <button
+                    onClick={requestHint}
+                    disabled={hintLoading}
+                    className="text-sm text-[var(--accent)] underline disabled:opacity-40"
+                  >
+                    {hintLoading ? "Thinking…" : hints.length === 0 ? "Need a hint?" : "Another hint"}
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
@@ -267,13 +370,47 @@ export default function LearnConceptPage() {
                 </span>
                 <p className="text-xs text-[var(--ink-faint)]">{detail.classificationReason}</p>
               </div>
-              <button
-                onClick={() => setStage("retrieve")}
-                className="rounded-lg px-5 py-2.5 text-sm font-semibold text-[var(--paper)]"
-                style={{ background: "var(--ink)" }}
-              >
-                Explain it from memory
-              </button>
+
+              {detail.misconceptions?.length > 0 && (
+                <section>
+                  <p className="text-xs font-medium uppercase tracking-wide text-[var(--ink-faint)]">
+                    Common misconceptions
+                  </p>
+                  <ul className="mt-2 space-y-1.5">
+                    {detail.misconceptions.map((m, i) => (
+                      <li key={i} className="text-sm leading-relaxed text-[var(--ink-soft)]">
+                        · {m}
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+
+              <div className="flex items-center gap-4 border-t border-[var(--border-hairline)] pt-6">
+                <button
+                  onClick={() => setStage("retrieve")}
+                  className="rounded-lg px-5 py-2.5 text-sm font-semibold text-[var(--paper)]"
+                  style={{ background: "var(--ink)" }}
+                >
+                  Explain it from memory
+                </button>
+                {!safeConcept.flagged ? (
+                  <button
+                    onClick={() => flagConcept(safeTopic.id, safeConcept.id, true)}
+                    className="text-sm text-[var(--ink-faint)] underline hover:text-[var(--warning)]"
+                  >
+                    This seems wrong
+                  </button>
+                ) : (
+                  <button
+                    onClick={regenerateDetail}
+                    disabled={regenerating}
+                    className="text-sm text-[var(--warning)] underline disabled:opacity-40"
+                  >
+                    {regenerating ? "Regenerating…" : "Flagged — regenerate this concept"}
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
@@ -292,12 +429,33 @@ export default function LearnConceptPage() {
                 className="mt-4 w-full border-b border-[var(--border-strong)] py-2 text-base outline-none placeholder:text-[var(--ink-faint)] focus:border-[var(--accent)] disabled:opacity-70"
               />
 
+              {!retrieveGrade && (
+                <div className="mt-4">
+                  <p className="text-xs text-[var(--ink-faint)]">How sure are you, before grading?</p>
+                  <div className="mt-2 flex gap-2">
+                    {CONFIDENCE_LEVELS.map((c) => (
+                      <button
+                        key={c.label}
+                        onClick={() => setConfidence(c.value)}
+                        className="flex-1 rounded-lg border px-2 py-2 text-xs font-medium transition-colors"
+                        style={{
+                          borderColor: confidence === c.value ? "var(--accent)" : "var(--border-hairline)",
+                          background: confidence === c.value ? "var(--accent-soft)" : "transparent",
+                        }}
+                      >
+                        {c.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {retrieveError && <p className="mt-3 text-sm text-[var(--warning)]">{retrieveError}</p>}
 
               {!retrieveGrade ? (
                 <button
                   onClick={submitRetrieve}
-                  disabled={!retrieveAnswer.trim() || submittingRetrieve}
+                  disabled={!retrieveAnswer.trim() || confidence === null || submittingRetrieve}
                   className="mt-6 rounded-lg px-5 py-2.5 text-sm font-semibold text-[var(--paper)] disabled:opacity-40"
                   style={{ background: "var(--ink)" }}
                 >

@@ -16,12 +16,18 @@ const schema: Schema = {
   required: ["score", "feedback", "fluencyWarning"],
 } as unknown as Schema;
 
+function misconceptionBlock(misconceptions: string[]): string {
+  if (!misconceptions.length) return "";
+  return `\nKnown misconceptions about this concept — if the learner's answer shows one of these, say so explicitly in the feedback:\n${misconceptions.map((m) => `- ${m}`).join("\n")}\n`;
+}
+
 export async function POST(req: NextRequest) {
   let topic: string;
   let conceptTitle: string;
   let conceptOneLiner: string;
   let coreIdea: string;
   let why: string;
+  let misconceptions: string[];
   let userAnswer: string;
   let isReview: boolean;
   try {
@@ -31,6 +37,7 @@ export async function POST(req: NextRequest) {
     conceptOneLiner = String(body.concept?.oneLiner ?? "");
     coreIdea = String(body.coreIdea ?? "");
     why = String(body.why ?? "");
+    misconceptions = Array.isArray(body.misconceptions) ? body.misconceptions : [];
     userAnswer = String(body.userAnswer ?? "");
     isReview = Boolean(body.isReview);
   } catch {
@@ -44,7 +51,7 @@ export async function POST(req: NextRequest) {
   const prompt = isReview
     ? `Topic: "${topic}". Concept: "${conceptTitle}" (${conceptOneLiner}).
 Correct core idea: "${coreIdea}" Why: "${why}"
-This is a SPACED REVIEW — the learner has not seen this concept in a while.
+${misconceptionBlock(misconceptions)}This is a SPACED REVIEW — the learner has not seen this concept in a while.
 They tried to explain it from memory:
 """${userAnswer}"""
 Grade it honestly. Produce ONLY a JSON object:
@@ -52,7 +59,7 @@ Grade it honestly. Produce ONLY a JSON object:
 Respond with ONLY the JSON object.`
     : `Topic: "${topic}". Concept: "${conceptTitle}" (${conceptOneLiner}).
 The correct core idea is: "${coreIdea}" Why: "${why}"
-The learner just tried to explain this concept FROM MEMORY, in their own words, with no notes visible:
+${misconceptionBlock(misconceptions)}The learner just tried to explain this concept FROM MEMORY, in their own words, with no notes visible:
 """${userAnswer}"""
 Grade it honestly. Produce ONLY a JSON object:
 {"score": 1-5 integer, "feedback": "2-3 sentences, specific and honest — say exactly what is missing or wrong, do not just be encouraging", "fluencyWarning": true/false}
