@@ -4,6 +4,8 @@ export const MODEL_NAME = "gemini-3.6-flash";
 
 export class NoApiKeyError extends Error {}
 
+export class QuotaExceededError extends Error {}
+
 export function getGenAI(): GoogleGenerativeAI {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new NoApiKeyError();
@@ -19,7 +21,11 @@ export function stripFences(text: string): string {
     .trim();
 }
 
-const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
+// 429 is deliberately NOT in here. Google returns 429 for both a transient per-minute rate limit
+// and a hard daily quota cap, and either way its own suggested retryDelay runs tens of seconds —
+// far past anything worth blocking a request on. Blindly retrying it would only burn more of a
+// (often tiny, free-tier) request budget chasing an error that won't clear in time.
+const RETRYABLE_STATUS = new Set([500, 502, 503, 504]);
 const MAX_RETRIES = 2;
 const RETRY_DELAY_MS = 800;
 
@@ -52,6 +58,21 @@ async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
   throw lastErr;
 }
 
+async function callModel<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await withRetry(fn);
+  } catch (err) {
+    if (err instanceof GoogleGenerativeAIFetchError && err.status === 429) {
+      throw new QuotaExceededError(
+        err.message.includes("PerDay")
+          ? "Gemini's free-tier daily quota for this model is used up. Wait for it to reset, or switch to a paid plan."
+          : "Gemini is rate-limiting requests right now. Wait a moment and try again.",
+      );
+    }
+    throw err;
+  }
+}
+
 export async function generateJson<T>(prompt: string, responseSchema: Schema): Promise<T> {
   const genAI = getGenAI();
   const model = genAI.getGenerativeModel({
@@ -61,7 +82,7 @@ export async function generateJson<T>(prompt: string, responseSchema: Schema): P
       responseSchema,
     },
   });
-  const result = await withRetry(() => model.generateContent(prompt));
+  const result = await callModel(() => model.generateContent(prompt));
   const text = result.response.text();
   return JSON.parse(stripFences(text)) as T;
 }
@@ -69,6 +90,6 @@ export async function generateJson<T>(prompt: string, responseSchema: Schema): P
 export async function generateText(prompt: string): Promise<string> {
   const genAI = getGenAI();
   const model = genAI.getGenerativeModel({ model: MODEL_NAME });
-  const result = await withRetry(() => model.generateContent(prompt));
+  const result = await callModel(() => model.generateContent(prompt));
   return result.response.text().trim();
 }

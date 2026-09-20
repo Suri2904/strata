@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { SchemaType, Schema } from "@google/generative-ai";
-import { generateJson, NoApiKeyError } from "@/lib/gemini";
+import { generateJson, NoApiKeyError, QuotaExceededError } from "@/lib/gemini";
 import { ConceptDetail, STARTING_LEVELS, StartingLevel, TARGET_DEPTHS, TargetDepth } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -102,6 +102,9 @@ Respond with ONLY the JSON object — no prose, no markdown fences.`;
         { error: "no-api-key", message: "No Gemini API key is configured on the server yet." },
         { status: 501 },
       );
+    }
+    if (err instanceof QuotaExceededError) {
+      return NextResponse.json({ error: "quota-exceeded", message: err.message }, { status: 429 });
     }
     console.error("Deep-dive generation failed:", err);
     return NextResponse.json(

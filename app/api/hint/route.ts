@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { generateText, NoApiKeyError } from "@/lib/gemini";
+import { generateText, NoApiKeyError, QuotaExceededError } from "@/lib/gemini";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -51,6 +51,9 @@ Never state the concept's name or its formal answer. Respond with ONLY the hint 
         { error: "no-api-key", message: "No Gemini API key is configured on the server yet." },
         { status: 501 },
       );
+    }
+    if (err instanceof QuotaExceededError) {
+      return NextResponse.json({ error: "quota-exceeded", message: err.message }, { status: 429 });
     }
     console.error("Hint generation failed:", err);
     return NextResponse.json({ error: "generation-failed", message: "Couldn't get a hint right now." }, { status: 502 });
