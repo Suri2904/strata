@@ -42,8 +42,16 @@ confidence runs from your actual scores, and whether you trend over- or under-co
 ## Stack
 
 Next.js (App Router) · TypeScript · Tailwind CSS v4 · Zustand (persisted store) · Gemini API
-(`@google/generative-ai`) · [ts-fsrs](https://github.com/open-spaced-repetition/ts-fsrs) ·
-Vercel Blob (`@vercel/blob`)
+(`@google/generative-ai`) + Groq (Llama 3.3 70B, plain `fetch`) ·
+[ts-fsrs](https://github.com/open-spaced-repetition/ts-fsrs) · Vercel Blob (`@vercel/blob`)
+
+Every AI call goes through Gemini first, falling back to Groq automatically if Gemini is
+quota-exhausted, rate-limited, having an outage, or simply not configured (`lib/llm.ts`). Gemini's
+free tier alone is tight (20 requests/day for `gemini-3.6-flash`); Groq's free tier adds roughly
+1,000 requests/day on `llama-3.3-70b-versatile`, so between the two the app comfortably outlasts
+either single free tier. Only if both providers fail does the app return a real error — and it's a
+specific one ("Gemini's daily quota is used up", "neither key is configured", etc.), not a generic
+"try again."
 
 Progress lives in `localStorage` first — no accounts, fully private to your browser, works
 offline. `/settings` adds an optional manual cloud backup/restore against a single JSON blob,
@@ -54,9 +62,21 @@ devices never silently clobber each other; you choose when to push or pull.
 
 ```bash
 npm install
-cp .env.local.example .env.local   # add a free Gemini key — required, there's no offline fallback
+cp .env.local.example .env.local   # add GEMINI_API_KEY and/or GROQ_API_KEY — see below
 npm run dev
 ```
+
+### AI keys
+
+- `GEMINI_API_KEY` — free from [Google AI Studio](https://aistudio.google.com). 20 requests/day
+  free tier for `gemini-3.6-flash`.
+- `GROQ_API_KEY` — free from [console.groq.com](https://console.groq.com), no credit card. ~1,000
+  requests/day on `llama-3.3-70b-versatile`.
+
+Either alone works (the app just runs on whichever is configured); having both is what gives the
+app real day-to-day headroom, since Gemini's fallback to Groq happens automatically. With neither
+configured, every AI-backed action fails with a clear "no key configured" message instead of
+breaking silently.
 
 ## Cloud backup (optional)
 
@@ -73,6 +93,6 @@ keeps working from `localStorage` alone.
 
 ## Deploying
 
-Push to GitHub, import into Vercel, add `GEMINI_API_KEY` and (optionally) `SYNC_PASSCODE` as
-environment variables in the Vercel project settings (server-side only — never exposed to the
-client).
+Push to GitHub, import into Vercel, add `GEMINI_API_KEY`, `GROQ_API_KEY`, and (optionally)
+`SYNC_PASSCODE` as environment variables in the Vercel project settings (server-side only —
+never exposed to the client).

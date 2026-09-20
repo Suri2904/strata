@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { SchemaType, Schema } from "@google/generative-ai";
-import { generateJson, NoApiKeyError } from "@/lib/gemini";
+import { generateJson, NoApiKeyError } from "@/lib/llm";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -53,7 +53,7 @@ Respond with ONLY the JSON object — no prose, no markdown fences.`;
   } catch (err) {
     if (err instanceof NoApiKeyError) {
       return NextResponse.json(
-        { error: "no-api-key", message: "No Gemini API key is configured on the server yet." },
+        { error: "no-api-key", message: err.message },
         { status: 501 },
       );
     }

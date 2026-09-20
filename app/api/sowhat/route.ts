@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { generateText, NoApiKeyError, QuotaExceededError } from "@/lib/gemini";
+import { generateText, NoApiKeyError, QuotaExceededError } from "@/lib/llm";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -29,7 +29,7 @@ In one or two plain sentences, tell them directly whether this counts as a real 
   } catch (err) {
     if (err instanceof NoApiKeyError) {
       return NextResponse.json(
-        { error: "no-api-key", message: "No Gemini API key is configured on the server yet." },
+        { error: "no-api-key", message: err.message },
         { status: 501 },
       );
     }

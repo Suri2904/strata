@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { generateText, NoApiKeyError, QuotaExceededError } from "@/lib/gemini";
+import { generateText, NoApiKeyError, QuotaExceededError } from "@/lib/llm";
 
 export const runtime = "nodejs";
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   let topic: string;
@@ -48,7 +48,7 @@ Never state the concept's name or its formal answer. Respond with ONLY the hint 
   } catch (err) {
     if (err instanceof NoApiKeyError) {
       return NextResponse.json(
-        { error: "no-api-key", message: "No Gemini API key is configured on the server yet." },
+        { error: "no-api-key", message: err.message },
         { status: 501 },
       );
     }
